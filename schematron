@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+#
+# Script to run ISO schematron validation. Usage:
+# schematron schema.sch file1.xml [file2.xml ...]
+#
+# To run it, you must install:
+# - Saxon 9.7 (http://www.saxonica.com/download/download_page.xml)
+# - ISO Schmatron (https://github.com/Schematron/schematron)
+#
+# Then you must configure SCHEM_HOME and SAXON_HOME with your installation
+# directories.
+
+# ISO Schematron home
+SCHEM_HOME="${HOME}/doc/els/schematron"
+# ISO Schematron stylesheet location
+SCHEM_XSLT="${SCHEM_HOME}/trunk/schematron/code/iso_schematron_skeleton_for_saxon.xsl"
+# Schematron parameters
+SCHEM_PARAM="allow-foreign=true"
+# Saxon home (version 9.7)
+SAXON_HOME="/opt/misc/saxon-ee-9.7"
+# Saxon main class
+SAXON_MAIN="net.sf.saxon.Transform"
+# XML catalog
+CATALOG="${HOME}/.xml/catalog"
+# Entity expansion limit
+ENTITY_LIMIT="1000000"
+# temporary directory
+TMP_DIR="/tmp"
+# Compiled schematron path
+COMPILED=""
+
+# Print help
+print_help() {
+    echo "Script to run ISO schematron validation. Usage:"
+    echo "schematron schema.sch file1.xml [file2.xml ...]"
+}
+
+# Check command line parameters. Parameters:
+# - The number of options
+check_parameters() {
+    # check the number of command line parameters
+    if [ "$1" -lt 2 ]; then
+        help
+        echo "You must pass schematron file and at least one XML file on command line"
+        exit 1
+    fi
+    # check that files exist
+    for file in "${@:2}"; do
+        if [ ! -f "$file" ];then
+            echo "File '$file' not found"
+            exit 2
+        fi
+    done
+}
+
+# Run Saxon. Parameters:
+# - The stylesheet
+# - The XML file to transform
+# - The output file (output on the console if empty)
+# - Stylesheet parameters (if necessary)
+run_saxon() {
+    local stylesheet="$1"
+    local file="$2"
+    local output="$3"
+    local parameters="$4"
+    local classpath=""
+    for jar in ${SAXON_HOME}/*.jar; do
+        classpath=${jar}:${classpath}
+    done
+    if [ "${output}" != "" ]; then
+        java -cp ${classpath} -DentityExpansionLimit=${ENTITY_LIMIT} ${SAXON_MAIN} \
+            $4 -warnings:silent -catalog:"${CATALOG}" -o:"${output}" -s:"${file}" "${stylesheet}"
+    else
+        java -cp ${classpath} -DentityExpansionLimit=${ENTITY_LIMIT} ${SAXON_MAIN} \
+            $4 -warnings:silent -catalog:"${CATALOG}" -s:"${file}" "${stylesheet}"
+    fi
+    if [ "$?" -ne 0 ]; then
+        echo "Error running Saxon"
+        exit 3
+    fi
+}
+
+# Compile schematron. Parameters:
+# - The schematron file
+compile_schematron() {
+    local schematron="$1"
+    COMPILED="${TMP_DIR}/`basename ${schematron}`.xsl"
+    # return if compiled version newer than source
+    if [ -f ${COMPILED} ]; then
+        if [ ${COMPILED} -nt ${schematron} ]; then
+            return
+        fi
+    fi
+    echo "Compiling schematron..."
+    run_saxon "${SCHEM_XSLT}" "${schematron}" "${COMPILED}" "${SCHEM_PARAM}"
+}
+
+# Check given file against schematron. Parameters:
+# - File to check
+check_file() {
+    local file="$1"
+    echo "Checking file '${file}'..."
+    run_saxon "${COMPILED}" "${file}"
+}
+
+check_parameters "$#" "$@"
+compile_schematron "$1"
+for file in "${@:2}"; do
+    check_file "${file}"
+done
