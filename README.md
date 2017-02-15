@@ -30,4 +30,4 @@ one:
 
 	$ schematron schema.sch file1.xml file2.xml ...
 
-*Enjoy*
+*Enjoy!*
